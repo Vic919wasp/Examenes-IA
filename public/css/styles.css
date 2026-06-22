@@ -153,6 +153,15 @@ select:focus, input:focus { border-color: var(--navy-soft); }
   .source-row { grid-template-columns: 1fr; gap: 6px; }
 }
 
+/* ---------- Barra de progreso ---------- */
+.progreso-track {
+  height: 8px; background: var(--line); border-radius: 4px; overflow: hidden;
+}
+.progreso-bar {
+  height: 100%; width: 0%; background: var(--navy);
+  border-radius: 4px; transition: width .4s ease;
+}
+
 /* ---------- Downloads ---------- */
 .downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 
