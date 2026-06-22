@@ -75,53 +75,51 @@ exports.handler = async (event) => {
 
   const listaTemasStr = temasSeleccionados.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
 
-  const prompt = `Sos un profesor armando una evaluación de opción múltiple a partir del material de
-estudio adjunto (puede incluir texto de páginas web y/o documentos PDF).
+  function promptVersion(versionNum, totalVersiones) {
+    return `Sos un profesor armando UNA versión de examen de opción múltiple a partir del material adjunto.
 ${contexto ? `Contexto adicional: "${contexto}"` : ""}
 
-El usuario seleccionó los siguientes temas sobre los que quiere que se basen las preguntas:
+Temas seleccionados:
 ${listaTemasStr}
 
-IMPORTANTE: Las preguntas deben basarse EXCLUSIVAMENTE en esos temas y en el contenido
-del material provisto. No inventes información que no esté en el material.
+Estás generando la VERSIÓN ${versionNum} de ${totalVersiones}. Las preguntas deben ser
+DISTINTAS a las de otras versiones (diferente redacción, diferentes aspectos del tema).
+Basate EXCLUSIVAMENTE en el contenido del material provisto.
 
-Generá ${CANTIDAD_TEMAS} versiones distintas del examen (Versión 1, 2, 3), cada una con
-EXACTAMENTE ${PREGUNTAS_POR_TEMA} preguntas de opción múltiple en español rioplatense
-(Argentina). Distribuí las preguntas de forma equilibrada entre los temas seleccionados.
+Generá EXACTAMENTE ${PREGUNTAS_POR_TEMA} preguntas de opción múltiple en español
+rioplatense (Argentina), distribuidas equilibradamente entre los temas.
 
-Reglas estrictas:
+Reglas:
 - Cada pregunta tiene EXACTAMENTE 4 opciones, una sola correcta.
-- "ans" es el índice (0 a 3) de la opción correcta dentro de "opts".
-- Las opciones incorrectas deben ser plausibles (no absurdas ni obvias).
-- Las 3 versiones deben cubrir el mismo contenido pero con preguntas DISTINTAS entre sí.
-- Respondé ÚNICAMENTE con un JSON válido, sin texto adicional:
-{
-  "1": [ {"q":"pregunta","opts":["a","b","c","d"],"ans":2}, ... (${PREGUNTAS_POR_TEMA} items) ],
-  "2": [ ... (${PREGUNTAS_POR_TEMA} items) ],
-  "3": [ ... (${PREGUNTAS_POR_TEMA} items) ]
-}`;
+- "ans" es el índice (0 a 3) de la opción correcta.
+- Las opciones incorrectas deben ser plausibles.
+- Respondé ÚNICAMENTE con un array JSON válido, sin texto adicional:
+[ {"q":"pregunta","opts":["a","b","c","d"],"ans":2}, ... (${PREGUNTAS_POR_TEMA} items) ]`;
+  }
+
+  function limpiarLista(lista) {
+    return (Array.isArray(lista) ? lista : [])
+      .filter((p) => p && typeof p.q === "string" && Array.isArray(p.opts) && p.opts.length === 4)
+      .slice(0, PREGUNTAS_POR_TEMA)
+      .map((p) => ({
+        q: String(p.q).trim(),
+        opts: p.opts.map((o) => String(o).trim()),
+        ans: Number.isInteger(p.ans) && p.ans >= 0 && p.ans <= 3 ? p.ans : 0,
+      }));
+  }
 
   try {
-    const text = await generateContent(prompt, parts, { json: true });
-    const parsed = extractJson(text);
-
+    // Generamos cada versión por separado para evitar timeouts
     const temas = {};
-    for (const key of ["1", "2", "3"]) {
-      const lista = Array.isArray(parsed[key]) ? parsed[key] : [];
-      temas[key] = lista
-        .filter((p) => p && typeof p.q === "string" && Array.isArray(p.opts) && p.opts.length === 4)
-        .slice(0, PREGUNTAS_POR_TEMA)
-        .map((p) => ({
-          q: String(p.q).trim(),
-          opts: p.opts.map((o) => String(o).trim()),
-          ans: Number.isInteger(p.ans) && p.ans >= 0 && p.ans <= 3 ? p.ans : 0,
-        }));
+    for (let v = 1; v <= CANTIDAD_TEMAS; v++) {
+      const text = await generateContent(promptVersion(v, CANTIDAD_TEMAS), parts, { json: true });
+      const parsed = extractJson(text);
+      const lista = Array.isArray(parsed) ? parsed : (Array.isArray(parsed[String(v)]) ? parsed[String(v)] : []);
+      temas[String(v)] = limpiarLista(lista);
+      if (temas[String(v)].length < PREGUNTAS_POR_TEMA) {
+        advertencias.push(`Versión ${v}: la IA generó ${temas[String(v)].length}/${PREGUNTAS_POR_TEMA} preguntas.`);
+      }
     }
-
-    const incompletos = Object.entries(temas).filter(([, qs]) => qs.length < PREGUNTAS_POR_TEMA);
-    incompletos.forEach(([k, qs]) =>
-      advertencias.push(`Versión ${k}: la IA generó ${qs.length}/${PREGUNTAS_POR_TEMA} preguntas.`)
-    );
 
     return jsonResponse(200, { temas, advertencias });
   } catch (err) {

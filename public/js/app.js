@@ -195,7 +195,7 @@ async function generarExamen() {
   }
 
   btn.disabled = true;
-  statusEl.textContent = `Generando 3 versiones × 15 preguntas sobre ${seleccionados.length} tema(s)… puede tardar 30-50 segundos.`;
+  statusEl.textContent = `Generando 3 versiones × 15 preguntas sobre ${seleccionados.length} tema(s)… esto puede tardar hasta 60 segundos, por favor esperá.`;
   document.getElementById("card-descarga").style.display = "none";
 
   try {

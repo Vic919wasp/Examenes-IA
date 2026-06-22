@@ -5,6 +5,13 @@
 
 [functions]
   node_bundler = "esbuild"
+  included_files = ["netlify/functions/lib/**"]
+
+[functions."generate-exam"]
+  timeout = 26
+
+[functions."extract-topics"]
+  timeout = 26
 
 [[redirects]]
   from = "/api/*"
