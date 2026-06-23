@@ -150,10 +150,11 @@ async function analizarFuentes() {
 
   try {
     // 1. Bajar texto de las URLs server-side (evita CORS)
+    const urlErrors = [];
     if (sources.some((s) => s.type === "url")) {
       const { texts = [], advertencias = [] } = await apiPost("fetch-sources", { sources });
       sourceTextsCache = texts;
-      if (advertencias.length) setError("analizar-error", advertencias.join(" — "));
+      if (advertencias.length) urlErrors.push(...advertencias);
     }
 
     // 1b. Textos pegados manualmente → van directo al cache
@@ -167,7 +168,15 @@ async function analizarFuentes() {
       .map((s) => ({ filename: s.filename, mimeType: s.mimeType, base64: s.base64 }));
 
     if (!sourceTextsCache.length && !sourcePdfsCache.length) {
-      throw new Error("No se pudo obtener contenido de las fuentes.");
+      const detalle = urlErrors.length
+        ? urlErrors.join(" — ") + " → Usá la opción \"Pegar texto\" para ese sitio."
+        : "Completá al menos una fuente con contenido válido.";
+      throw new Error(detalle);
+    }
+
+    // Mostrar advertencias de URLs bloqueadas pero continuar si hay otras fuentes
+    if (urlErrors.length) {
+      setError("analizar-error", urlErrors.join(" — ") + " (se continúa con las otras fuentes)");
     }
 
     // 3. Gemini extrae los temas (server-side, 60s timeout en Vercel)
