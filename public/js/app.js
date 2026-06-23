@@ -1,12 +1,13 @@
 // public/js/app.js
 //
 // Índice rápido:
-//   1. Estado global y helpers                         L. 10-55
-//   2. Filas de fuentes (web / PDF)                    L. 57-112
-//   3. PASO 1 — Analizar fuentes → lista de temas      L. 114-175
-//   4. PASO 2 — Seleccionar temas + generar            L. 177-255
-//   5. PASO 3 — Mostrar descarga de PDFs               L. 257-290
-//   6. Init                                             L. 292-308
+//   1. Estado global y helpers (limpiarHtml, el, fetch URL, setStatus)  L. 11-80
+//   2. Filas de fuentes (URL / PDF / Pegar texto)                        L. 82-145
+//   3. PASO 1 — Analizar fuentes → lista de temas (Gemini)              L. 147-230
+//   4. PASO 2 — Seleccionar temas + generar 3 versiones (Gemini)        L. 232-310
+//   5. PASO 3 — Botones de descarga individual                          L. 312-350
+//   6. Descarga ZIP (jsPDF + JSZip)                                      L. 352-390
+//   7. Init                                                               L. 392-415
 
 "use strict";
 
@@ -15,9 +16,50 @@
 const MAX_SOURCES = 3;
 const TOTAL_VERSIONES = 3;
 const PREGUNTAS_POR_VERSION = 15;
+const CORS_PROXY = "https://api.allorigins.win/get?url="; // fallback si el browser bloquea por CORS
+
 const sourcesState = [null, null, null];
 let sourceTextsCache = [];
 let sourcePdfsCache = [];
+
+function limpiarHtml(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(br|p|div|li|h[1-6]|tr)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
+}
+
+// Intenta bajar una URL: primero directo, si falla por CORS usa allorigins.win
+async function fetchUrl(url) {
+  // Intento 1: fetch directo desde el browser
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const html = await r.text();
+    const text = limpiarHtml(html);
+    if (!text) throw new Error("Página sin texto legible.");
+    return text;
+  } catch (e1) {
+    // Intento 2: proxy CORS público
+    try {
+      const r2 = await fetch(`${CORS_PROXY}${encodeURIComponent(url)}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r2.ok) throw new Error(`Proxy HTTP ${r2.status}`);
+      const data = await r2.json();
+      const text = limpiarHtml(data.contents || "");
+      if (!text) throw new Error("Página sin texto legible (via proxy).");
+      return text;
+    } catch (e2) {
+      throw new Error(`${e2.message} — si el sitio sigue bloqueado, usá "Pegar texto".`);
+    }
+  }
+}
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -41,17 +83,6 @@ function fileToBase64(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-async function apiPost(path, body) {
-  const res = await fetch(`/api/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-  return data;
 }
 
 function setStatus(id, msg) { const e = document.getElementById(id); if (e) e.textContent = msg; }
@@ -92,6 +123,7 @@ function renderSourceRow(index) {
         },
       });
       inputArea.appendChild(inp);
+
     } else if (typeSelect.value === "pdf") {
       const fileInput = el("input", { type: "file", accept: "application/pdf" });
       const statusSpan = el("span", { class: "muted", style: "display:block; margin-top:4px" });
@@ -105,9 +137,10 @@ function renderSourceRow(index) {
       });
       inputArea.appendChild(fileInput);
       inputArea.appendChild(statusSpan);
+
     } else if (typeSelect.value === "text") {
       const textarea = el("textarea", {
-        placeholder: "Pegá acá el texto del material de estudio (copiado de la página web, un apunte, etc.)",
+        placeholder: "Pegá acá el texto del material (copiado de la página web, un apunte, etc.)",
         rows: "6",
         style: "width:100%; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:var(--radius); resize:vertical;",
         oninput: (e) => {
@@ -139,60 +172,84 @@ async function analizarFuentes() {
 
   const sources = sourcesState.filter(Boolean);
   if (!sources.length) {
-    setError("analizar-error", "Completá al menos una fuente (página web o PDF).");
+    setError("analizar-error", "Completá al menos una fuente (página web, PDF o texto pegado).");
     return;
   }
 
   btn.disabled = true;
-  setStatus("analizar-status", "Bajando el contenido…");
   document.getElementById("card-temas").style.display = "none";
   document.getElementById("card-descarga").style.display = "none";
 
+  const urlErrors = [];
+
   try {
-    // 1. Bajar texto de las URLs server-side (evita CORS)
-    const urlErrors = [];
-    if (sources.some((s) => s.type === "url")) {
-      const { texts = [], advertencias = [] } = await apiPost("fetch-sources", { sources });
-      sourceTextsCache = texts;
-      if (advertencias.length) urlErrors.push(...advertencias);
+    // URLs: fetch directo o via proxy CORS
+    for (const [i, src] of sources.entries()) {
+      if (src.type !== "url") continue;
+      setStatus("analizar-status", `Descargando fuente ${i + 1}…`);
+      try {
+        const text = await fetchUrl(src.url);
+        sourceTextsCache.push({ index: i, text: text.slice(0, 20000), url: src.url });
+      } catch (err) {
+        urlErrors.push(`Fuente ${i + 1}: ${err.message}`);
+      }
     }
 
-    // 1b. Textos pegados manualmente → van directo al cache
+    // Textos pegados manualmente
     sources.filter((s) => s.type === "text").forEach((s, i) => {
-      sourceTextsCache.push({ index: i, text: s.text, url: "texto pegado manualmente" });
+      sourceTextsCache.push({ index: i, text: s.text, url: "texto pegado" });
     });
 
-    // 2. Separar PDFs
+    // PDFs
     sourcePdfsCache = sources
       .filter((s) => s.type === "pdf")
       .map((s) => ({ filename: s.filename, mimeType: s.mimeType, base64: s.base64 }));
 
     if (!sourceTextsCache.length && !sourcePdfsCache.length) {
-      const detalle = urlErrors.length
-        ? urlErrors.join(" — ") + " → Usá la opción \"Pegar texto\" para ese sitio."
-        : "Completá al menos una fuente con contenido válido.";
-      throw new Error(detalle);
+      throw new Error(urlErrors.length ? urlErrors.join(" — ") : "Sin contenido válido.");
     }
 
-    // Mostrar advertencias de URLs bloqueadas pero continuar si hay otras fuentes
-    if (urlErrors.length) {
-      setError("analizar-error", urlErrors.join(" — ") + " (se continúa con las otras fuentes)");
-    }
+    if (urlErrors.length) setError("analizar-error", urlErrors.join(" — "));
 
-    // 3. Gemini extrae los temas (server-side, 60s timeout en Vercel)
+    // Gemini extrae los temas
     setStatus("analizar-status", "Analizando temas con IA…");
-    const { topics } = await apiPost("extract-topics", {
-      sourceTexts: sourceTextsCache,
-      sourcePdfs: sourcePdfsCache,
-    });
 
+    const parts = buildParts(sourceTextsCache, sourcePdfsCache);
+    const prompt = `Analizá el material adjunto e identificá todos los TEMAS, UNIDADES o EJES
+TEMÁTICOS principales. Sé específico (ej: "Arquitectura de Von Neumann", no "Introducción").
+Si hay capítulos con nombres propios, usalos.
+
+Respondé ÚNICAMENTE con JSON válido:
+{ "topics": ["tema 1", "tema 2", ...] }
+Máximo 20 temas.`;
+
+    const text = await geminiGenerate(prompt, parts, { json: true });
+    const parsed = extractJson(text);
+    const topics = Array.isArray(parsed.topics)
+      ? parsed.topics.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim())
+      : [];
+
+    if (!topics.length) throw new Error("La IA no encontró temas en el material.");
     mostrarTemas(topics);
+
   } catch (e) {
     setError("analizar-error", e.message);
   } finally {
     btn.disabled = false;
     setStatus("analizar-status", "");
   }
+}
+
+function buildParts(texts, pdfs) {
+  const parts = [];
+  for (const src of texts) {
+    parts.push({ text: `--- Material (${src.url}) ---\n${src.text}` });
+  }
+  for (const pdf of pdfs) {
+    parts.push({ inlineData: { mimeType: pdf.mimeType || "application/pdf", data: pdf.base64 } });
+    parts.push({ text: `(Documento: ${pdf.filename || "PDF"})` });
+  }
+  return parts;
 }
 
 function mostrarTemas(topics) {
@@ -224,10 +281,8 @@ async function generarExamen() {
 
   const seleccionados = temasSeleccionados();
   if (!seleccionados.length) { setError("generar-error", "Seleccioná al menos un tema."); return; }
-
   if (!sourceTextsCache.length && !sourcePdfsCache.length) {
-    setError("generar-error", "Volvé al paso 1 y analizá el contenido primero.");
-    return;
+    setError("generar-error", "Volvé al paso 1 y analizá el contenido primero."); return;
   }
 
   btn.disabled = true;
@@ -237,6 +292,8 @@ async function generarExamen() {
   const progBar = document.getElementById("progreso-bar");
   const progTxt = document.getElementById("progreso-txt");
   const contexto = document.getElementById("contexto").value.trim();
+  const listaTemasStr = seleccionados.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
+  const parts = buildParts(sourceTextsCache, sourcePdfsCache);
   const temas = {};
   const advertencias = [];
 
@@ -245,18 +302,38 @@ async function generarExamen() {
       progTxt.textContent = `Generando versión ${v} de ${TOTAL_VERSIONES}…`;
       progBar.style.width = `${Math.round(((v - 1) / TOTAL_VERSIONES) * 100)}%`;
 
-      const data = await apiPost("generate-version", {
-        sourceTexts: sourceTextsCache,
-        sourcePdfs: sourcePdfsCache,
-        temasSeleccionados: seleccionados,
-        versionNum: v,
-        totalVersiones: TOTAL_VERSIONES,
-        contexto,
-      });
+      const prompt = `Sos un profesor armando la VERSIÓN ${v} de ${TOTAL_VERSIONES} de un examen
+de opción múltiple basado en el material adjunto.
+${contexto ? `Contexto: "${contexto}"` : ""}
 
-      temas[String(v)] = data.preguntas || [];
-      if (temas[String(v)].length < PREGUNTAS_POR_VERSION) {
-        advertencias.push(`Versión ${v}: ${temas[String(v)].length}/${PREGUNTAS_POR_VERSION} preguntas.`);
+Temas seleccionados:
+${listaTemasStr}
+
+Preguntas DISTINTAS a otras versiones. Basate EXCLUSIVAMENTE en el material.
+Generá EXACTAMENTE ${PREGUNTAS_POR_VERSION} preguntas en español rioplatense (Argentina).
+
+Reglas:
+- EXACTAMENTE 4 opciones, una sola correcta.
+- "ans" es el índice (0–3) de la correcta.
+- Opciones incorrectas plausibles.
+
+Respondé ÚNICAMENTE con un array JSON:
+[ {"q":"...","opts":["a","b","c","d"],"ans":2}, ... (${PREGUNTAS_POR_VERSION} items) ]`;
+
+      const text = await geminiGenerate(prompt, parts, { json: true });
+      const parsed = extractJson(text);
+      const lista = (Array.isArray(parsed) ? parsed : [])
+        .filter((p) => p && typeof p.q === "string" && Array.isArray(p.opts) && p.opts.length === 4)
+        .slice(0, PREGUNTAS_POR_VERSION)
+        .map((p) => ({
+          q: String(p.q).trim(),
+          opts: p.opts.map((o) => String(o).trim()),
+          ans: Number.isInteger(p.ans) && p.ans >= 0 && p.ans <= 3 ? p.ans : 0,
+        }));
+
+      temas[String(v)] = lista;
+      if (lista.length < PREGUNTAS_POR_VERSION) {
+        advertencias.push(`Versión ${v}: ${lista.length}/${PREGUNTAS_POR_VERSION} preguntas.`);
       }
       progBar.style.width = `${Math.round((v / TOTAL_VERSIONES) * 100)}%`;
     }
@@ -264,6 +341,7 @@ async function generarExamen() {
     progTxt.textContent = "¡Listo!";
     setTimeout(() => { document.getElementById("progreso-container").style.display = "none"; }, 1500);
     mostrarDescarga(temas, advertencias);
+
   } catch (e) {
     setError("generar-error", e.message);
     document.getElementById("progreso-container").style.display = "none";
@@ -272,7 +350,7 @@ async function generarExamen() {
   }
 }
 
-/* ===================== 5. PASO 3: DESCARGA ===================== */
+/* ===================== 5. PASO 3: DESCARGA INDIVIDUAL ===================== */
 
 function mostrarDescarga(temas, advertencias) {
   const card = document.getElementById("card-descarga");
@@ -307,42 +385,29 @@ function mostrarDescarga(temas, advertencias) {
   card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/* ===================== DESCARGA ZIP ===================== */
+/* ===================== 6. DESCARGA ZIP ===================== */
 
 async function descargarZip(temas) {
   const btn = document.querySelector("#downloads .btn:last-child");
   if (btn) { btn.disabled = true; btn.textContent = "Generando ZIP…"; }
-
   try {
     const zip = new JSZip();
-
-    // Agregar cada versión del examen
     Object.keys(temas).forEach((v) => {
-      const doc = buildExamPDF(v, temas[v]);
-      const pdfBytes = doc.output("arraybuffer");
-      zip.file(`Examen-Version${v}.pdf`, pdfBytes);
+      zip.file(`Examen-Version${v}.pdf`, buildExamPDF(v, temas[v]).output("arraybuffer"));
     });
-
-    // Agregar la hoja de respuestas
-    const respDoc = buildAnswerKeyPDF(temas);
-    zip.file("Respuestas.pdf", respDoc.output("arraybuffer"));
-
-    // Generar y descargar el ZIP
+    zip.file("Respuestas.pdf", buildAnswerKeyPDF(temas).output("arraybuffer"));
     const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = "Examenes.zip";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = url; a.download = "Examenes.zip";
+    document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "⬇️ Descargar ZIP con los 4 PDFs"; }
   }
 }
 
-/* ===================== 6. INIT ===================== */
+/* ===================== 7. INIT ===================== */
 
 document.addEventListener("DOMContentLoaded", () => {
   setupSources();

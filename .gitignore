@@ -1,5 +1,6 @@
 node_modules/
-.netlify/
 .env
 *.log
 .DS_Store
+# Generado por el GitHub Action — nunca commitear
+public/js/config.js
