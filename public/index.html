@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generador de Exámenes IA</title>
-<meta name="description" content="Analizá material de estudio (webs y PDFs) y generá 3 versiones de examen multiple choice de 15 preguntas, listas para imprimir.">
+<meta name="description" content="Cargá material de estudio (webs y PDFs) y generá 3 versiones de examen multiple choice de 15 preguntas, listas para imprimir.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Saltar al contenido</a>
@@ -17,8 +18,8 @@
 
   <header class="masthead">
     <div>
-      <p class="kicker">Netlify + Gemini</p>
-      <h1>Generador de Exámenes IA</h1>
+      <p class="kicker">Generador con IA</p>
+      <h1>Generador de Exámenes</h1>
       <p class="lede">Cargá hasta 3 fuentes con el material de estudio. La IA identifica los temas,
         vos elegís cuáles entran, y genera 3 versiones del examen listas para imprimir.</p>
     </div>
@@ -36,7 +37,7 @@
         <label for="contexto">Contexto / aclaraciones (opcional)</label>
         <input type="text" id="contexto" placeholder='Ej: "3° año secundaria, enfocarse en capítulos 4 y 5"'>
       </div>
-      <div style="margin-top:6px">
+      <div style="margin-top:10px">
         <button class="btn" id="btn-analizar">Analizar contenido</button>
         <span class="muted" id="analizar-status"></span>
       </div>
@@ -46,7 +47,7 @@
     <!-- PASO 2: Seleccionar temas -->
     <div class="card" id="card-temas" style="display:none">
       <h2><span class="step-num">2</span> Temas encontrados en el material</h2>
-      <p class="hint" id="temas-hint">Seleccioná los temas sobre los que querés que se generen las preguntas.</p>
+      <p class="hint" id="temas-hint"></p>
       <div id="topics-list"></div>
       <div class="topics-actions">
         <button class="btn ghost" id="btn-todos">Seleccionar todos</button>
@@ -68,14 +69,13 @@
       <p class="hint" id="descarga-resumen"></p>
       <div id="descarga-advertencias"></div>
       <div class="downloads" id="downloads"></div>
-      <button class="btn secondary" id="btn-volver" style="margin-top:18px">↩ Volver a empezar</button>
+      <button class="btn secondary" id="btn-volver" style="margin-top:18px">↩ Nueva evaluación</button>
     </div>
 
   </main>
 
   <footer class="shell-footer">
-    Generador de Exámenes IA — Netlify Functions + Gemini.
-    Revisá las preguntas generadas antes de imprimir.
+    Generador de Exámenes IA — Revisá las preguntas generadas antes de imprimir.
   </footer>
 </div>
 
