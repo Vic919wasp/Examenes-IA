@@ -38,7 +38,10 @@ function limpiarHtml(html) {
 async function fetchUrl(url) {
   // Intento 1: fetch directo desde el browser
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const r = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const html = await r.text();
     const text = limpiarHtml(html);
@@ -47,16 +50,19 @@ async function fetchUrl(url) {
   } catch (e1) {
     // Intento 2: proxy CORS público
     try {
+      const controller2 = new AbortController();
+      const timer2 = setTimeout(() => controller2.abort(), 15000);
       const r2 = await fetch(`${CORS_PROXY}${encodeURIComponent(url)}`, {
-        signal: AbortSignal.timeout(10000),
+        signal: controller2.signal,
       });
+      clearTimeout(timer2);
       if (!r2.ok) throw new Error(`Proxy HTTP ${r2.status}`);
       const data = await r2.json();
       const text = limpiarHtml(data.contents || "");
-      if (!text) throw new Error("Página sin texto legible (via proxy).");
+      if (!text) throw new Error("Página sin texto legible.");
       return text;
     } catch (e2) {
-      throw new Error(`${e2.message} — si el sitio sigue bloqueado, usá "Pegar texto".`);
+      throw new Error(`No se pudo leer el sitio (${e2.message}). Usá "Pegar texto" para esta fuente.`);
     }
   }
 }
