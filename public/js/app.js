@@ -34,37 +34,58 @@ function limpiarHtml(html) {
     .replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
 }
 
-// Intenta bajar una URL: primero directo, si falla por CORS usa allorigins.win
-async function fetchUrl(url) {
-  // Intento 1: fetch directo desde el browser
+// Fetch con timeout manual (compatible con todos los navegadores)
+async function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
     const r = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const html = await r.text();
-    const text = limpiarHtml(html);
-    if (!text) throw new Error("Página sin texto legible.");
-    return text;
-  } catch (e1) {
-    // Intento 2: proxy CORS público
+    return r;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
+// Intenta bajar una URL usando múltiples proxies CORS en cascada
+async function fetchUrl(url) {
+  const encoded = encodeURIComponent(url);
+
+  // Lista de estrategias en orden de prioridad
+  const intentos = [
+    // 1. Fetch directo (funciona si el sitio permite CORS)
+    async () => {
+      const r = await fetchWithTimeout(url, 12000);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.text();
+    },
+    // 2. corsproxy.io — devuelve HTML crudo
+    async () => {
+      const r = await fetchWithTimeout(`https://corsproxy.io/?url=${encoded}`, 15000);
+      if (!r.ok) throw new Error(`corsproxy HTTP ${r.status}`);
+      return await r.text();
+    },
+    // 3. allorigins.win — devuelve JSON con campo "contents"
+    async () => {
+      const r = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encoded}`, 15000);
+      if (!r.ok) throw new Error(`allorigins HTTP ${r.status}`);
+      const data = await r.json();
+      return data.contents || "";
+    },
+  ];
+
+  for (const intento of intentos) {
     try {
-      const controller2 = new AbortController();
-      const timer2 = setTimeout(() => controller2.abort(), 15000);
-      const r2 = await fetch(`${CORS_PROXY}${encodeURIComponent(url)}`, {
-        signal: controller2.signal,
-      });
-      clearTimeout(timer2);
-      if (!r2.ok) throw new Error(`Proxy HTTP ${r2.status}`);
-      const data = await r2.json();
-      const text = limpiarHtml(data.contents || "");
-      if (!text) throw new Error("Página sin texto legible.");
-      return text;
-    } catch (e2) {
-      throw new Error(`No se pudo leer el sitio (${e2.message}). Usá "Pegar texto" para esta fuente.`);
+      const html = await intento();
+      const text = limpiarHtml(html);
+      if (text && text.length > 100) return text;
+    } catch (_) {
+      // sigue al siguiente intento
     }
   }
+
+  throw new Error(`No se pudo leer el sitio. Usá "Pegar texto" para esta fuente.`);
 }
 
 function el(tag, attrs = {}, children = []) {
@@ -192,7 +213,7 @@ async function analizarFuentes() {
     // URLs: fetch directo o via proxy CORS
     for (const [i, src] of sources.entries()) {
       if (src.type !== "url") continue;
-      setStatus("analizar-status", `Descargando fuente ${i + 1}…`);
+      setStatus("analizar-status", `Descargando fuente ${i + 1}… (puede tardar hasta 30 seg)`);
       try {
         const text = await fetchUrl(src.url);
         sourceTextsCache.push({ index: i, text: text.slice(0, 20000), url: src.url });
