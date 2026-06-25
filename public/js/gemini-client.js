@@ -1,21 +1,24 @@
 // public/js/gemini-client.js
-// L.1-10  constantes y helper de key
-// L.12-42 geminiGenerate(promptText, parts, {json}) → string
-// L.44-53 extractJson(text) → objeto/array JS
+// L.1-8   constantes
+// L.10-16 getApiKey: lee la key cargada desde /api/get-key
+// L.18-42 geminiGenerate(prompt, parts, {json}) → string
+// L.44-52 extractJson(text) → objeto/array JS
 
 "use strict";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
+// La key la carga app.js al inicio desde /api/get-key y la guarda acá
+window._geminiKey = "";
+
 function getApiKey() {
-  // La key la inyecta el GitHub Action en public/js/config.js como window.GEMINI_API_KEY
-  return (typeof window !== "undefined" && window.GEMINI_API_KEY) || "";
+  return window._geminiKey || "";
 }
 
 async function geminiGenerate(promptText, parts = [], { json = false } = {}) {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API key no configurada. Revisá el secreto GEMINI_API_KEY en tu repo de GitHub.");
+  if (!apiKey) throw new Error("API key no disponible. Recargá la página.");
 
   const body = {
     contents: [{ role: "user", parts: [{ text: promptText }, ...parts] }],
@@ -30,7 +33,7 @@ async function geminiGenerate(promptText, parts = [], { json = false } = {}) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Error ${res.status} de la API de Gemini`);
+    throw new Error(err?.error?.message || `Error ${res.status} de Gemini`);
   }
 
   const data = await res.json();

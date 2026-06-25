@@ -1,13 +1,13 @@
 // public/js/app.js
 //
 // Índice rápido:
-//   1. Estado global y helpers (limpiarHtml, el, fetch URL, setStatus)  L. 11-80
-//   2. Filas de fuentes (URL / PDF / Pegar texto)                        L. 82-145
-//   3. PASO 1 — Analizar fuentes → lista de temas (Gemini)              L. 147-230
-//   4. PASO 2 — Seleccionar temas + generar 3 versiones (Gemini)        L. 232-310
-//   5. PASO 3 — Botones de descarga individual                          L. 312-350
-//   6. Descarga ZIP (jsPDF + JSZip)                                      L. 352-390
-//   7. Init                                                               L. 392-415
+//   1. Estado global y helpers                              L.  11-65
+//   2. Filas de fuentes (URL / PDF / Pegar texto)           L.  67-130
+//   3. PASO 1 — Analizar fuentes → lista de temas (Gemini) L. 132-205
+//   4. PASO 2 — Seleccionar temas + generar (Gemini)        L. 207-285
+//   5. PASO 3 — Botones de descarga individual              L. 287-325
+//   6. Descarga ZIP                                          L. 327-360
+//   7. Init (carga API key + eventos)                        L. 362-385
 
 "use strict";
 
@@ -16,77 +16,10 @@
 const MAX_SOURCES = 3;
 const TOTAL_VERSIONES = 3;
 const PREGUNTAS_POR_VERSION = 15;
-const CORS_PROXY = "https://api.allorigins.win/get?url="; // fallback si el browser bloquea por CORS
 
 const sourcesState = [null, null, null];
 let sourceTextsCache = [];
 let sourcePdfsCache = [];
-
-function limpiarHtml(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(br|p|div|li|h[1-6]|tr)[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
-}
-
-// Fetch con timeout manual (compatible con todos los navegadores)
-async function fetchWithTimeout(url, ms) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    const r = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
-    return r;
-  } catch (e) {
-    clearTimeout(timer);
-    throw e;
-  }
-}
-
-// Intenta bajar una URL usando múltiples proxies CORS en cascada
-async function fetchUrl(url) {
-  const encoded = encodeURIComponent(url);
-
-  // Lista de estrategias en orden de prioridad
-  const intentos = [
-    // 1. Fetch directo (funciona si el sitio permite CORS)
-    async () => {
-      const r = await fetchWithTimeout(url, 12000);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.text();
-    },
-    // 2. corsproxy.io — devuelve HTML crudo
-    async () => {
-      const r = await fetchWithTimeout(`https://corsproxy.io/?url=${encoded}`, 15000);
-      if (!r.ok) throw new Error(`corsproxy HTTP ${r.status}`);
-      return await r.text();
-    },
-    // 3. allorigins.win — devuelve JSON con campo "contents"
-    async () => {
-      const r = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encoded}`, 15000);
-      if (!r.ok) throw new Error(`allorigins HTTP ${r.status}`);
-      const data = await r.json();
-      return data.contents || "";
-    },
-  ];
-
-  for (const intento of intentos) {
-    try {
-      const html = await intento();
-      const text = limpiarHtml(html);
-      if (text && text.length > 100) return text;
-    } catch (_) {
-      // sigue al siguiente intento
-    }
-  }
-
-  throw new Error(`No se pudo leer el sitio. Usá "Pegar texto" para esta fuente.`);
-}
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -112,12 +45,33 @@ function fileToBase64(file) {
   });
 }
 
+async function apiPost(path, body) {
+  const res = await fetch(`/api/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  return data;
+}
+
 function setStatus(id, msg) { const e = document.getElementById(id); if (e) e.textContent = msg; }
 function setError(id, msg) {
   const e = document.getElementById(id);
   if (!e) return;
   e.innerHTML = "";
   if (msg) e.appendChild(el("div", { class: "error-box" }, msg));
+}
+
+function buildParts(texts, pdfs) {
+  const parts = [];
+  for (const src of texts) parts.push({ text: `--- Material (${src.url}) ---\n${src.text}` });
+  for (const pdf of pdfs) {
+    parts.push({ inlineData: { mimeType: pdf.mimeType || "application/pdf", data: pdf.base64 } });
+    parts.push({ text: `(Documento: ${pdf.filename || "PDF"})` });
+  }
+  return parts;
 }
 
 /* ===================== 2. FILAS DE FUENTES ===================== */
@@ -199,7 +153,7 @@ async function analizarFuentes() {
 
   const sources = sourcesState.filter(Boolean);
   if (!sources.length) {
-    setError("analizar-error", "Completá al menos una fuente (página web, PDF o texto pegado).");
+    setError("analizar-error", "Completá al menos una fuente.");
     return;
   }
 
@@ -210,15 +164,15 @@ async function analizarFuentes() {
   const urlErrors = [];
 
   try {
-    // URLs: fetch directo o via proxy CORS
+    // URLs: bajadas server-side por Vercel (sin CORS, sin límite de browser)
     for (const [i, src] of sources.entries()) {
       if (src.type !== "url") continue;
-      setStatus("analizar-status", `Descargando fuente ${i + 1}… (puede tardar hasta 30 seg)`);
-      try {
-        const text = await fetchUrl(src.url);
-        sourceTextsCache.push({ index: i, text: text.slice(0, 20000), url: src.url });
-      } catch (err) {
-        urlErrors.push(`Fuente ${i + 1}: ${err.message}`);
+      setStatus("analizar-status", `Descargando fuente ${i + 1}…`);
+      const data = await apiPost("fetch-url", { url: src.url });
+      if (data.text) {
+        sourceTextsCache.push({ index: i, text: data.text, url: src.url });
+      } else {
+        urlErrors.push(`Fuente ${i + 1}: ${data.error || "no se pudo leer"}`);
       }
     }
 
@@ -228,20 +182,18 @@ async function analizarFuentes() {
     });
 
     // PDFs
-    sourcePdfsCache = sources
-      .filter((s) => s.type === "pdf")
+    sourcePdfsCache = sources.filter((s) => s.type === "pdf")
       .map((s) => ({ filename: s.filename, mimeType: s.mimeType, base64: s.base64 }));
 
     if (!sourceTextsCache.length && !sourcePdfsCache.length) {
-      throw new Error(urlErrors.length ? urlErrors.join(" — ") : "Sin contenido válido.");
+      throw new Error(urlErrors.join(" — ") || "Sin contenido válido.");
     }
-
     if (urlErrors.length) setError("analizar-error", urlErrors.join(" — "));
 
-    // Gemini extrae los temas
+    // Gemini extrae los temas (directo desde el browser, sin timeout de servidor)
     setStatus("analizar-status", "Analizando temas con IA…");
-
     const parts = buildParts(sourceTextsCache, sourcePdfsCache);
+
     const prompt = `Analizá el material adjunto e identificá todos los TEMAS, UNIDADES o EJES
 TEMÁTICOS principales. Sé específico (ej: "Arquitectura de Von Neumann", no "Introducción").
 Si hay capítulos con nombres propios, usalos.
@@ -265,18 +217,6 @@ Máximo 20 temas.`;
     btn.disabled = false;
     setStatus("analizar-status", "");
   }
-}
-
-function buildParts(texts, pdfs) {
-  const parts = [];
-  for (const src of texts) {
-    parts.push({ text: `--- Material (${src.url}) ---\n${src.text}` });
-  }
-  for (const pdf of pdfs) {
-    parts.push({ inlineData: { mimeType: pdf.mimeType || "application/pdf", data: pdf.base64 } });
-    parts.push({ text: `(Documento: ${pdf.filename || "PDF"})` });
-  }
-  return parts;
 }
 
 function mostrarTemas(topics) {
@@ -377,7 +317,7 @@ Respondé ÚNICAMENTE con un array JSON:
   }
 }
 
-/* ===================== 5. PASO 3: DESCARGA INDIVIDUAL ===================== */
+/* ===================== 5. DESCARGA INDIVIDUAL ===================== */
 
 function mostrarDescarga(temas, advertencias) {
   const card = document.getElementById("card-descarga");
@@ -436,8 +376,16 @@ async function descargarZip(temas) {
 
 /* ===================== 7. INIT ===================== */
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   setupSources();
+
+  // Cargar la API key desde Vercel (variable de entorno, nunca expuesta en el código)
+  try {
+    const res = await fetch("/api/get-key");
+    const data = await res.json();
+    if (data.key) window._geminiKey = data.key;
+  } catch (_) { /* silencioso, Gemini dará error claro si falta */ }
+
   document.getElementById("btn-analizar").addEventListener("click", analizarFuentes);
   document.getElementById("btn-generar").addEventListener("click", generarExamen);
   document.getElementById("btn-todos").addEventListener("click", () =>
