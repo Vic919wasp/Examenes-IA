@@ -297,8 +297,12 @@ Reglas generales:
 - EXACTAMENTE ${PREGUNTAS} preguntas en español rioplatense.
 - Preguntas distintas a otras versiones. Solo del material provisto.
 - Cada pregunta: 4 opciones, una correcta. "ans" = índice (0-3) de la correcta.
-- Distribuí la posición correcta de forma equilibrada (aprox. igual cantidad en 0, 1, 2 y 3).
+- Distribuí la posición correcta de forma equilibrada (aprox. igual en 0, 1, 2 y 3).
 - Opciones incorrectas plausibles.
+- MUY IMPORTANTE: cada pregunta debe ser AUTOCONTENIDA. No escribas frases como
+  "según el texto", "según el material", "según el documento adjunto" ni nada que
+  suponga que el alumno tiene acceso al texto fuente. Si el estilo requiere un párrafo
+  de contexto (comprensión lectora), ese párrafo va DENTRO del campo "q" de la pregunta.
 
 Respondé ÚNICAMENTE con array JSON:
 [{"q":"...","opts":["a","b","c","d"],"ans":2},...]`, parts, { json: true });

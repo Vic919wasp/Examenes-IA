@@ -1,18 +1,16 @@
 // public/js/pdf.js
-//
-// Construye los PDFs con jsPDF (cargado por CDN en index.html, expone
-// window.jspdf.jsPDF). Todo corre en el navegador: no hay generación de
-// PDF del lado del servidor.
-//
-//   buildExamPDF(temaNumero, preguntas)   → 1 examen, sin respuesta marcada
-//   buildAnswerKeyPDF(temasObj)           → 1 PDF con las respuestas de los 3 temas
-//   triggerDownload(doc, filename)        → dispara la descarga
+// buildExamPDF(temaNumero, preguntas) → PDF del examen sin respuestas
+// buildAnswerKeyPDF(temasObj)         → PDF de la hoja de corrección
+// triggerDownload(doc, filename)      → dispara la descarga
 
 "use strict";
 
 const LETTERS_PDF = ["A", "B", "C", "D"];
-const PAGE = { width: 595.28, height: 841.89, margin: 50 };
-const LINE_H = 13;
+const PAGE = { width: 595.28, height: 841.89, marginX: 55, marginY: 50 };
+const LINE_H = 13.5;
+const TEXT_W = PAGE.width - PAGE.marginX * 2;       // ancho útil del texto
+const OPT_INDENT = 18;                              // sangría de opciones
+const OPT_W = TEXT_W - OPT_INDENT;                 // ancho texto de opciones
 
 function newDoc() {
   const { jsPDF } = window.jspdf;
@@ -20,52 +18,52 @@ function newDoc() {
 }
 
 function ensureSpace(doc, y, needed) {
-  if (y + needed > PAGE.height - PAGE.margin) {
+  if (y + needed > PAGE.height - PAGE.marginY) {
     doc.addPage();
-    return PAGE.margin;
+    return PAGE.marginY;
   }
   return y;
 }
 
 function buildExamPDF(temaNumero, preguntas) {
   const doc = newDoc();
-  const maxWidth = PAGE.width - PAGE.margin * 2;
-  let y = PAGE.margin;
+  let y = PAGE.marginY;
 
+  // — Encabezado —
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(`Evaluación — Tema ${temaNumero}`, PAGE.margin, y);
+  doc.setFontSize(15);
+  doc.text(`Evaluación — Versión ${temaNumero}`, PAGE.marginX, y);
   y += 22;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text("Nombre y apellido: ______________________________________", PAGE.margin, y);
+  doc.text("Nombre y apellido: ______________________________________", PAGE.marginX, y);
   y += 14;
-  doc.text("Curso: ____________        Fecha: ____ / ____ / ________", PAGE.margin, y);
-  y += 22;
+  doc.text("Curso: ____________        Fecha: ____ / ____ / ________", PAGE.marginX, y);
+  y += 20;
 
   doc.setDrawColor(180, 180, 180);
-  doc.line(PAGE.margin, y, PAGE.width - PAGE.margin, y);
-  y += 18;
+  doc.line(PAGE.marginX, y, PAGE.width - PAGE.marginX, y);
+  y += 16;
 
+  // — Preguntas —
   preguntas.forEach((item, i) => {
-    const qLines = doc.splitTextToSize(`${i + 1}. ${item.q}`, maxWidth);
-    y = ensureSpace(doc, y, qLines.length * LINE_H + 4 * LINE_H);
-
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(qLines, PAGE.margin, y);
-    y += qLines.length * LINE_H + 3;
+    doc.setFontSize(10.5);
+    const qLines = doc.splitTextToSize(`${i + 1}. ${item.q}`, TEXT_W);
+    y = ensureSpace(doc, y, qLines.length * LINE_H + 4 * LINE_H + 6);
+    doc.text(qLines, PAGE.marginX, y);
+    y += qLines.length * LINE_H + 4;
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
+    doc.setFontSize(10);
     item.opts.forEach((opt, j) => {
-      const optLines = doc.splitTextToSize(`${LETTERS_PDF[j]})  ${opt}`, maxWidth - 18);
+      const optLines = doc.splitTextToSize(`${LETTERS_PDF[j]})  ${opt}`, OPT_W);
       y = ensureSpace(doc, y, optLines.length * LINE_H);
-      doc.text(optLines, PAGE.margin + 18, y);
+      doc.text(optLines, PAGE.marginX + OPT_INDENT, y);
       y += optLines.length * LINE_H;
     });
-    y += 10;
+    y += 9;
   });
 
   return doc;
@@ -73,29 +71,28 @@ function buildExamPDF(temaNumero, preguntas) {
 
 function buildAnswerKeyPDF(temasObj) {
   const doc = newDoc();
-  const maxWidth = PAGE.width - PAGE.margin * 2;
-  let y = PAGE.margin;
+  let y = PAGE.marginY;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("Hoja de corrección", PAGE.margin, y);
+  doc.setFontSize(15);
+  doc.text("Hoja de corrección", PAGE.marginX, y);
   y += 26;
 
   Object.keys(temasObj).forEach((temaNumero) => {
     y = ensureSpace(doc, y, 26);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(`Tema ${temaNumero}`, PAGE.margin, y);
-    y += 18;
+    doc.setFontSize(12);
+    doc.text(`Versión ${temaNumero}`, PAGE.marginX, y);
+    y += 17;
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
+    doc.setFontSize(10);
     temasObj[temaNumero].forEach((item, i) => {
       const letra = LETTERS_PDF[item.ans];
       const linea = `${i + 1}. ${letra})  ${item.opts[item.ans]}`;
-      const lines = doc.splitTextToSize(linea, maxWidth);
+      const lines = doc.splitTextToSize(linea, TEXT_W);
       y = ensureSpace(doc, y, lines.length * LINE_H);
-      doc.text(lines, PAGE.margin, y);
+      doc.text(lines, PAGE.marginX, y);
       y += lines.length * LINE_H;
     });
     y += 16;
