@@ -191,6 +191,46 @@ select:focus, input:focus { border-color: var(--navy-soft); }
   border-radius: 4px; transition: width .4s ease;
 }
 
+/* ---------- Estilo de preguntas ---------- */
+.estilo-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+
+.estilo-label {
+  font-weight: 600; font-size: 13px; color: var(--navy-soft);
+  margin: 0 0 10px;
+}
+
+.estilo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.estilo-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line); border-radius: var(--radius);
+  background: #fff; cursor: pointer; text-align: left;
+  font-family: var(--sans);
+  transition: border-color .15s, background .15s;
+}
+.estilo-btn:hover { border-color: var(--navy-soft); background: var(--paper-dim); }
+.estilo-btn.active { border-color: var(--navy); background: var(--gold-soft); }
+
+.estilo-icon { font-size: 18px; line-height: 1; }
+.estilo-nombre { font-weight: 600; font-size: 13px; color: var(--navy); }
+.estilo-desc { font-size: 11.5px; color: var(--ink-soft); line-height: 1.3; }
+
+@media (max-width: 600px) {
+  .estilo-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 380px) {
+  .estilo-grid { grid-template-columns: 1fr; }
+}
+
 /* ---------- Downloads ---------- */
 .downloads { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 

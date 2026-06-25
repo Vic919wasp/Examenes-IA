@@ -1,15 +1,49 @@
 // app.js — lógica principal del Generador de Exámenes IA
-// L.1-70   helpers (el, fileToBase64, fetchUrl, setStatus/Error, buildParts)
-// L.72-135 filas de fuentes (URL / PDF / Pegar texto)
-// L.137-210 PASO 1: analizar → temas
-// L.212-295 PASO 2: generar + redistribuirRespuestas
-// L.297-350 PASO 3: descarga individual + ZIP
-// L.352-370 init
+// L.1-80   helpers (el, fileToBase64, fetchUrl, setStatus/Error, buildParts, estilos)
+// L.82-145 filas de fuentes (URL / PDF / Pegar texto)
+// L.147-220 PASO 1: analizar → temas
+// L.222-315 PASO 2: generar + redistribuirRespuestas
+// L.317-370 PASO 3: descarga individual + ZIP
+// L.372-395 init
 "use strict";
 
 const MAX_SOURCES = 3, TOTAL_V = 3, PREGUNTAS = 15;
 const sourcesState = [null, null, null];
 let textsCache = [], pdfsCache = [];
+
+// ── Estilos de preguntas ──────────────────────────────────────────────────────
+
+const ESTILOS = {
+  multiple: `Cada pregunta es DIRECTA: una oración que pregunta algo concreto con 4 opciones (A-D).`,
+  comprension: `Cada pregunta debe incluir un párrafo breve del material (entre comillas o precedido
+de "Leé el siguiente texto:"), seguido de UNA pregunta de comprensión sobre ese párrafo con 4 opciones.`,
+  completar: `Cada pregunta es una ORACIÓN CON UN ESPACIO EN BLANCO (___) que se completa con la
+opción correcta. Las 4 opciones son palabras o frases cortas que encajan en el espacio.`,
+  vof: `Cada pregunta presenta CUATRO AFIRMACIONES sobre el tema. Solo UNA es verdadera; las otras
+tres son falsas o incorrectas. El enunciado es: "¿Cuál de las siguientes afirmaciones es VERDADERA?"`,
+  caso: `Cada pregunta describe una SITUACIÓN, ESCENARIO O EJEMPLO PRÁCTICO relacionado con el tema
+y pregunta qué ocurre, cuál es la causa, qué decisión tomar o cómo se aplica el concepto. 4 opciones.`,
+  mixto: `Usá una mezcla equilibrada de los siguientes estilos (2-3 preguntas de cada tipo):
+  - Opción múltiple directa
+  - Comprensión de un párrafo del material
+  - Completar la frase con ___
+  - Cuál de 4 afirmaciones es la verdadera
+  - Caso práctico o situación a resolver`,
+};
+
+function getEstiloSeleccionado() {
+  const btn = document.querySelector(".estilo-btn.active");
+  return btn ? btn.dataset.estilo : "multiple";
+}
+
+function setupEstilos() {
+  document.querySelectorAll(".estilo-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".estilo-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -241,6 +275,8 @@ async function generarExamen() {
   const progTxt = document.getElementById("progreso-txt");
   const contexto = document.getElementById("contexto").value.trim();
   const listaTemas = sel.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
+  const estiloKey = getEstiloSeleccionado();
+  const estiloInstruccion = ESTILOS[estiloKey] || ESTILOS.multiple;
   const parts = buildParts(textsCache, pdfsCache);
   const temas = {}, advertencias = [];
 
@@ -254,7 +290,10 @@ de opción múltiple basado en el material adjunto.
 ${contexto ? `Contexto: "${contexto}"` : ""}
 Temas:\n${listaTemas}
 
-Reglas:
+ESTILO DE PREGUNTAS A USAR:
+${estiloInstruccion}
+
+Reglas generales:
 - EXACTAMENTE ${PREGUNTAS} preguntas en español rioplatense.
 - Preguntas distintas a otras versiones. Solo del material provisto.
 - Cada pregunta: 4 opciones, una correcta. "ans" = índice (0-3) de la correcta.
@@ -333,6 +372,7 @@ async function descargarZip(temas) {
 
 document.addEventListener("DOMContentLoaded", () => {
   setupSources();
+  setupEstilos();
   document.getElementById("btn-analizar").addEventListener("click", analizarFuentes);
   document.getElementById("btn-generar").addEventListener("click", generarExamen);
   document.getElementById("btn-todos").addEventListener("click", () =>

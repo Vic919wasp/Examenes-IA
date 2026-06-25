@@ -55,6 +55,44 @@
         <button class="btn ghost" id="btn-todos">Seleccionar todos</button>
         <button class="btn ghost" id="btn-ninguno">Deseleccionar todos</button>
       </div>
+
+      <!-- Estilo de preguntas -->
+      <div class="estilo-section">
+        <p class="estilo-label">Estilo de preguntas</p>
+        <div class="estilo-grid" id="estilo-grid">
+          <button class="estilo-btn active" data-estilo="multiple">
+            <span class="estilo-icon">📝</span>
+            <span class="estilo-nombre">Opción múltiple</span>
+            <span class="estilo-desc">Pregunta directa con 4 opciones A-D</span>
+          </button>
+          <button class="estilo-btn" data-estilo="comprension">
+            <span class="estilo-icon">📖</span>
+            <span class="estilo-nombre">Comprensión lectora</span>
+            <span class="estilo-desc">Párrafo del material + pregunta sobre el texto</span>
+          </button>
+          <button class="estilo-btn" data-estilo="completar">
+            <span class="estilo-icon">✏️</span>
+            <span class="estilo-nombre">Completar la frase</span>
+            <span class="estilo-desc">Oración con ___ a completar con la opción correcta</span>
+          </button>
+          <button class="estilo-btn" data-estilo="vof">
+            <span class="estilo-icon">✅</span>
+            <span class="estilo-nombre">Verdadero o Falso</span>
+            <span class="estilo-desc">4 afirmaciones, elegir la única verdadera</span>
+          </button>
+          <button class="estilo-btn" data-estilo="caso">
+            <span class="estilo-icon">🔍</span>
+            <span class="estilo-nombre">Caso práctico</span>
+            <span class="estilo-desc">Situación o ejemplo real a analizar</span>
+          </button>
+          <button class="estilo-btn" data-estilo="mixto">
+            <span class="estilo-icon">🔀</span>
+            <span class="estilo-nombre">Combinar estilos</span>
+            <span class="estilo-desc">Mezcla equilibrada de todos los anteriores</span>
+          </button>
+        </div>
+      </div>
+
       <div style="margin-top:16px">
         <button class="btn" id="btn-generar">Generar 3 versiones del examen</button>
       </div>
