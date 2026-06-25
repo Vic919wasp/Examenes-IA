@@ -153,6 +153,35 @@ select:focus, input:focus { border-color: var(--navy-soft); }
   .source-row { grid-template-columns: 1fr; gap: 6px; }
 }
 
+/* ── Responsive móvil ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .shell { padding: 16px 14px 60px; }
+
+  .masthead { flex-direction: column; gap: 10px; }
+  .badge-ia { display: none; }
+  .masthead h1 { font-size: 1.55rem; }
+  .masthead p.lede { font-size: 13px; }
+
+  .card { padding: 16px 14px; }
+
+  /* Botones de descarga: uno por línea en móvil */
+  .downloads { flex-direction: column; }
+  .downloads .btn, .downloads .btn.secondary { width: 100%; text-align: center; }
+
+  /* Topics: una sola columna */
+  #topics-list { grid-template-columns: 1fr; }
+
+  /* Acciones de temas: columna */
+  .topics-actions { flex-direction: column; }
+  .topics-actions .btn { width: 100%; text-align: center; }
+
+  /* Inputs de fuentes a ancho completo */
+  .source-input input[type="text"],
+  .source-input input[type="file"] { width: 100%; }
+
+  footer.shell-footer { padding: 14px; font-size: 11px; }
+}
+
 /* ---------- Barra de progreso ---------- */
 .progreso-track {
   height: 8px; background: var(--line); border-radius: 4px; overflow: hidden;
