@@ -4,7 +4,7 @@
 const _EP = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 async function geminiGenerate(prompt, parts = [], { json = false } = {}) {
   const key = window.GEMINI_API_KEY || "";
-  if (!key) throw new Error("API key no configurada. Revisá el secreto GEMINI_API_KEY en GitHub.");
+  if (!key) throw new Error("API key no disponible. Verificá que GEMINI_API_KEY esté configurada en las variables de entorno de Vercel (Site settings → Environment variables) y que el sitio haya redesplegado.");
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }, ...parts] }],
     ...(json ? { generationConfig: { responseMimeType: "application/json" } } : {}),

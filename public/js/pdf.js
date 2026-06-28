@@ -8,9 +8,9 @@
 const LETTERS_PDF = ["A", "B", "C", "D"];
 const PAGE = { width: 595.28, height: 841.89, marginX: 55, marginY: 50 };
 const LINE_H = 13.5;
-const TEXT_W = PAGE.width - PAGE.marginX * 2;       // ancho útil del texto
-const OPT_INDENT = 18;                              // sangría de opciones
-const OPT_W = TEXT_W - OPT_INDENT;                 // ancho texto de opciones
+const TEXT_W = PAGE.width - PAGE.marginX * 2;
+const OPT_INDENT = 18;
+const OPT_W = TEXT_W - OPT_INDENT;
 
 function newDoc() {
   const { jsPDF } = window.jspdf;
@@ -25,11 +25,33 @@ function ensureSpace(doc, y, needed) {
   return y;
 }
 
+// Limpia caracteres que jsPDF (Helvetica) no puede renderizar correctamente:
+// comillas tipográficas, guiones largos, elipsis, y cualquier carácter fuera
+// del rango Latin-1 (como letras griegas o cirílicas).
+function sanitizeForPDF(text) {
+  return String(text)
+    .replace(/[\u2018\u2019\u02BC]/g, "'")   // comillas simples tipográficas
+    .replace(/[\u201C\u201D\u00AB\u00BB]/g, '"') // comillas dobles tipográficas
+    .replace(/[\u2013\u2014]/g, "-")          // guión en y em
+    .replace(/\u2026/g, "...")                 // puntos suspensivos
+    .replace(/[^\x00-\xFF]/g, (c) => {        // caracteres fuera de Latin-1:
+      // intenta transliterar griegos conocidos, resto → '?'
+      const map = {
+        α:"a",β:"b",γ:"g",δ:"d",ε:"e",ζ:"z",η:"e",θ:"th",ι:"i",κ:"k",
+        λ:"l",μ:"m",ν:"n",ξ:"x",ο:"o",π:"p",ρ:"r",σ:"s",τ:"t",υ:"y",
+        φ:"ph",χ:"ch",ψ:"ps",ω:"o",
+        Α:"A",Β:"B",Γ:"G",Δ:"D",Ε:"E",Ζ:"Z",Η:"E",Θ:"Th",Ι:"I",Κ:"K",
+        Λ:"L",Μ:"M",Ν:"N",Ξ:"X",Ο:"O",Π:"P",Ρ:"R",Σ:"S",Τ:"T",Υ:"Y",
+        Φ:"Ph",Χ:"Ch",Ψ:"Ps",Ω:"O",
+      };
+      return map[c] || "?";
+    });
+}
+
 function buildExamPDF(temaNumero, preguntas) {
   const doc = newDoc();
   let y = PAGE.marginY;
 
-  // — Encabezado —
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.text(`Evaluación — Versión ${temaNumero}`, PAGE.marginX, y);
@@ -46,11 +68,11 @@ function buildExamPDF(temaNumero, preguntas) {
   doc.line(PAGE.marginX, y, PAGE.width - PAGE.marginX, y);
   y += 16;
 
-  // — Preguntas —
   preguntas.forEach((item, i) => {
+    const qText = sanitizeForPDF(`${i + 1}. ${item.q}`);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10.5);
-    const qLines = doc.splitTextToSize(`${i + 1}. ${item.q}`, TEXT_W);
+    const qLines = doc.splitTextToSize(qText, TEXT_W);
     y = ensureSpace(doc, y, qLines.length * LINE_H + 4 * LINE_H + 6);
     doc.text(qLines, PAGE.marginX, y);
     y += qLines.length * LINE_H + 4;
@@ -58,7 +80,8 @@ function buildExamPDF(temaNumero, preguntas) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     item.opts.forEach((opt, j) => {
-      const optLines = doc.splitTextToSize(`${LETTERS_PDF[j]})  ${opt}`, OPT_W);
+      const optText = sanitizeForPDF(`${LETTERS_PDF[j]})  ${opt}`);
+      const optLines = doc.splitTextToSize(optText, OPT_W);
       y = ensureSpace(doc, y, optLines.length * LINE_H);
       doc.text(optLines, PAGE.marginX + OPT_INDENT, y);
       y += optLines.length * LINE_H;
@@ -89,7 +112,7 @@ function buildAnswerKeyPDF(temasObj) {
     doc.setFontSize(10);
     temasObj[temaNumero].forEach((item, i) => {
       const letra = LETTERS_PDF[item.ans];
-      const linea = `${i + 1}. ${letra})  ${item.opts[item.ans]}`;
+      const linea = sanitizeForPDF(`${i + 1}. ${letra})  ${item.opts[item.ans]}`);
       const lines = doc.splitTextToSize(linea, TEXT_W);
       y = ensureSpace(doc, y, lines.length * LINE_H);
       doc.text(lines, PAGE.marginX, y);
