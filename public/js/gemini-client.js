@@ -1,16 +1,19 @@
 // gemini-client.js — llama a Gemini directo desde el browser.
-// La key la inyecta el GitHub Action en config.js como window.GEMINI_API_KEY.
+// La key viene de /api/get-key (variable de entorno de Vercel) y se guarda en window._geminiKey.
+// Usa el header x-goog-api-key (requerido para las auth keys con prefijo AQ.).
 "use strict";
 const _EP = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 async function geminiGenerate(prompt, parts = [], { json = false } = {}) {
-  const key = window.GEMINI_API_KEY || "";
-  if (!key) throw new Error("API key no disponible. Verificá que GEMINI_API_KEY esté configurada en las variables de entorno de Vercel (Site settings → Environment variables) y que el sitio haya redesplegado.");
+  const key = window._geminiKey || window.GEMINI_API_KEY || "";
+  if (!key) throw new Error("API key no disponible. Verificá que GEMINI_API_KEY esté en las variables de entorno de Vercel y que haya redesplegado.");
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }, ...parts] }],
     ...(json ? { generationConfig: { responseMimeType: "application/json" } } : {}),
   };
-  const res = await fetch(`${_EP}?key=${key}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  const res = await fetch(_EP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
