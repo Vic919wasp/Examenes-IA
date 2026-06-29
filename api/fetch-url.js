@@ -24,12 +24,23 @@ module.exports = async function handler(req, res) {
       headers: HEADERS,
       signal: AbortSignal.timeout(20000),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      if (r.status === 403 || r.status === 503) {
+        throw new Error(
+          `Este sitio tiene protección anti-bots (Cloudflare) y bloquea la descarga automática. ` +
+          `Alternativas: usá la página de Wikipedia sobre el tema, subí un PDF, o pegá el texto manualmente.`
+        );
+      }
+      throw new Error(`El sitio respondió con error ${r.status}. Probá con otra fuente (Wikipedia, PDF o "Pegar texto").`);
+    }
     const html = await r.text();
     const text = htmlToText(html).slice(0, 25000);
-    if (!text || text.length < 50) throw new Error("La página no tiene texto legible.");
+    if (!text || text.length < 50) throw new Error("La página no tiene texto legible (puede ser una app o un sitio muy visual). Probá con otra fuente.");
     return jsonResponse(res, 200, { text });
   } catch (err) {
-    return jsonResponse(res, 200, { text: null, error: err.message });
+    const msg = err.name === "TimeoutError" || err.name === "AbortError"
+      ? "El sitio tardó demasiado en responder. Probá con otra fuente o pegá el texto manualmente."
+      : err.message;
+    return jsonResponse(res, 200, { text: null, error: msg });
   }
 };

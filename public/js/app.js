@@ -158,7 +158,7 @@ async function analizarFuentes() {
         textsCache.push({ index: i, text: data.text, url: src.url });
       } else {
         // Si el sitio bloqueó al servidor también, avisamos pero seguimos
-        advertencias.push(`Fuente ${i + 1} (${src.url}): ${data.error || "no se pudo leer"} — usá "Pegar texto" para este sitio.`);
+        advertencias.push(`Fuente ${i + 1} (${src.url}): ${data.error || "no se pudo leer."}`);
       }
     }
 
